@@ -1,0 +1,386 @@
+sequence(e) ::= "<e; separator=\"\n\">"
+sequenceSpaced(e) ::= "<e; separator=\"\n\n\">"
+
+prog(tags, constants, classNames, classObjs, protObjs, dispTabs, methods) ::= <<
+.data
+    .align 2
+    .globl class_nameTab
+    .globl Int_protObj
+    .globl String_protObj
+    .globl bool_const_0
+    .globl bool_const_1
+    .globl Main_protObj
+    .globl _int_tag
+    .globl _string_tag
+    .globl _bool_tag
+
+<tags>
+
+<constants>
+
+class_nameTab:
+<classNames>
+
+class_objTab:
+<classObjs>
+
+<protObjs>
+
+<dispTabs>
+
+heap_start:
+    .word 0
+
+.text
+    .globl Int_init
+    .globl String_init
+    .globl Bool_init
+    .globl Main_init
+    .globl Main.main
+
+<methods>
+>>
+
+
+defineTag(name, tag) ::= <<
+_<name>_tag:
+    .word <tag>
+>>
+
+
+defineName(full_tag) ::= <<
+    la $a0 <full_tag>
+>>
+
+
+self() ::= <<
+    move $a0 $s0
+>>
+
+
+defineIntConst(value, tag) ::= <<
+int_const_<value>:
+    .word <tag>
+    .word 4
+    .word Int_dispTab
+    .word <value>
+>>
+
+
+defineStringConst(index, tag, value, len, noWords) ::= <<
+str_const_<index>:
+    .word <tag>
+    .word <noWords>
+    .word String_dispTab
+    .word <len>
+    .asciiz "<value>"
+    .align 2
+>>
+
+
+defineBoolConst(tag) ::= <<
+bool_const_0:
+    .word <tag>
+    .word 4
+    .word Bool_dispTab
+    .word 0
+bool_const_1:
+    .word <tag>
+    .word 4
+    .word Bool_dispTab
+    .word 1
+>>
+
+
+
+protObj(class, tag, words, attributes) ::= <<
+<class>_protObj:
+    .word <tag>
+    .word <words>
+    .word <class>_dispTab
+<attributes>
+>>
+
+
+protObjTabField(class) ::= <<
+    .word <class>_protObj
+    .word <class>_init
+>>
+
+
+dispTab(class, methods) ::= <<
+<class>_dispTab:
+<methods>
+>>
+
+
+dispTabField(method) ::= <<
+    .word <method>
+>>
+
+
+constructor(class, parent, attributes) ::= <<
+<class>_init:
+    addiu $sp $sp -12
+    sw $fp 12($sp)
+    sw $s0 8($sp)
+    sw $ra 4($sp)
+    addiu $fp $sp 4
+    move $s0 $a0
+
+<if (parent)>
+    jal <parent>_init
+<endif>
+
+<attributes>
+    move $a0 $s0
+    lw $fp 12($sp)
+    lw $s0 8($sp)
+    lw $ra 4($sp)
+    addiu $sp $sp 12
+    jr $ra
+>>
+
+
+method(class, name, body, offset) ::= <<
+<class>.<name>:
+    addiu $sp $sp -12
+    sw $fp 12($sp)
+    sw $s0 8($sp)
+    sw $ra 4($sp)
+    addiu $fp $sp 4
+    move $s0 $a0
+
+<body>
+    lw $fp 12($sp)
+    lw $s0 8($sp)
+    lw $ra 4($sp)
+    addiu $sp $sp <offset>
+    jr $ra
+>>
+
+
+getAttribute(offset) ::= <<
+    lw $a0 <offset>($s0)
+>>
+
+
+setAttribute(value, offset) ::= <<
+<value>
+    sw $a0 <offset>($s0)
+>>
+
+
+getLetVar(offset) ::= <<
+    lw $a0 <offset>($fp)
+>>
+
+setLetVar(value, offset) ::= <<
+<value>
+    sw $a0 <offset>($fp)
+>>
+
+
+staticDispatch(method, index, args, offset, filename, line, callerType, invoker) ::= <<
+<args>
+<if (invoker)>
+<invoker>
+<else>
+    move $a0 $s0
+<endif>
+    bnez $a0 dispatch_<method>_<index>
+    la $a0 <filename>
+    li $t1 <line>
+    jal _dispatch_abort
+dispatch_<method>_<index>:
+<if (callerType)>
+    la $t1 <callerType>_dispTab
+<else>
+    lw $t1 8($a0)
+<endif>
+    lw $t1 <offset>($t1)
+    jalr $t1
+>>
+
+
+dispatch(method, index, args, offset, filename, line) ::= <<
+<args>
+    move $a0 $s0
+    bnez $a0 dispatch_<method>_<index>
+    la $a0 <filename>
+    li $t1 <line>
+    jal _dispatch_abort
+dispatch_<method>_<index>:
+    lw $t1 8($a0)
+    lw $t1 <offset>($t1)
+    jalr $t1
+>>
+
+
+dispatchArg(arg) ::= <<
+<arg>
+    sw $a0 0($sp)
+    addiu $sp $sp -4
+>>
+
+
+if(cond, then, elsee, index) ::= <<
+<cond>
+    lw $t1 12($a0)
+    beqz $t1 else_<index>
+<then>
+    b endif_<index>
+else_<index>:
+<elsee>
+endif_<index>:
+>>
+
+
+while(cond, body, index) ::= <<
+while_<index>:
+<cond>
+    lw $t1 12($a0)
+    beqz $t1 end_while_<index>
+
+<body>
+    b while_<index>
+end_while_<index>:
+    li $a0 0
+>>
+
+defineLet(size) ::= <<
+    addiu $sp $sp <size>
+>>
+
+
+defineCase(expr, branches, index, filename, line) ::= <<
+    addiu $sp $sp -4
+    move $s0 $a0
+
+<expr>
+    bnez $a0 case_<index>
+    la $a0 <filename>
+    li $t1 <line>
+    jal _case_abort2
+
+case_<index>:
+    sw $a0 -4($fp)
+    lw $t1 0($a0)
+
+<branches>
+    lw $a0 -4($fp)
+    jal _case_abort
+
+end_case_<index>:
+    addiu $sp $sp 4
+>>
+
+
+caseBranch(expr, tag, maxTag, caseIndex, branchIndex) ::= <<
+    blt $t1 <tag> case_branch_<branchIndex>
+    bgt $t1 <maxTag> case_branch_<branchIndex>
+<expr>
+    b end_case_<caseIndex>
+case_branch_<branchIndex>:
+>>
+
+
+new(type) ::= <<
+    la $a0 <type>_protObj
+    jal Object.copy
+    jal <type>_init
+>>
+
+
+newSelfType() ::= <<
+    la $t1 class_objTab
+    lw $t2 0($s0)
+    mul $t2 $t2 8
+    addu $t1 $t1 $t2
+    sw $t1 0($sp)
+    addiu $sp $sp -4
+    lw $a0 0($t1)
+    jal Object.copy
+    lw $t1 4($sp)
+    addiu $sp $sp 4
+    lw $t1 4($t1)
+    jalr $t1
+>>
+
+
+voidCheck(expr, index) ::= <<
+<expr>
+    move $t1 $a0
+    la $a0 bool_const_1
+    beqz $t1 voidCheck_<index>
+    la $a0 bool_const_0
+voidCheck_<index>:
+>>
+
+
+arithmetic(leftOp, rightOp, op) ::= <<
+<leftOp>
+    sw $a0 0($sp)
+    addiu $sp $sp -4
+
+<rightOp>
+    jal Object.copy
+    lw $t1 4($sp)
+    addiu $sp $sp 4
+    lw $t1 12($t1)
+    lw $t2 12($a0)
+    <op> $t1 $t1 $t2
+    sw $t1 12($a0)
+>>
+
+
+neg(expr) ::= <<
+<expr>
+    lw $t1 12($a0)
+    neg $t1 $t1
+    sw $t1 12($a0)
+>>
+
+
+equal(leftOp, rightOp, index) ::= <<
+<leftOp>
+    sw $a0 0($sp)
+    addiu $sp $sp -4
+
+<rightOp>
+    lw $t1 4($sp)
+    addiu $sp $sp 4
+    move $t2 $a0
+    la $a0 bool_const_1
+    beq $t1 $t2 equal_<index>
+    la $a1 bool_const_0
+    jal equality_test
+equal_<index>:
+>>
+
+
+compare(leftOp, rightOp, op, index) ::= <<
+<leftOp>
+    sw $a0 0($sp)
+    addiu $sp $sp -4
+
+<rightOp>
+    lw $t1 4($sp)
+    addiu $sp $sp 4
+    lw $t1 12($t1)
+    lw $t2 12($a0)
+    la $a0 bool_const_1
+    <op> $t1 $t2 compare_<index>
+    la $a0 bool_const_0
+compare_<index>:
+>>
+
+not(expr, index) ::= <<
+<expr>
+    lw $t1 12($a0)
+    la $a0 bool_const_1
+    beqz $t1 not_<index>
+    la $a0 bool_const_0
+not_<index>:
+>>
+
